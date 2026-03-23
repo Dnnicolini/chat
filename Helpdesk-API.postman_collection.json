@@ -1,0 +1,491 @@
+{
+  "info": {
+    "_postman_id": "4b11d6e7-d2b6-4ff2-a6ff-b4b9969c4d37",
+    "name": "Helpdesk API",
+    "description": "Collection gerada a partir das rotas ativas da API. As rotas autenticadas usam Bearer Token via a variavel {{bearerToken}}. O fluxo recomendado e usar `POST /auth/login` para preencher automaticamente `bearerToken` e `refreshToken` no environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bearerToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "username",
+      "value": "customer@example.com"
+    },
+    {
+      "key": "password",
+      "value": "password123"
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Fluxo de autenticacao local. O backend encaminha login e refresh para a ViaAgrotech API e sincroniza o usuario local.",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data.access_token) {",
+                  "  pm.environment.set('bearerToken', data.access_token);",
+                  "}",
+                  "if (data.refresh_token) {",
+                  "  pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Encaminha o login para a ViaAgrotech API e salva `bearerToken` e `refreshToken` no environment."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "if (data.access_token) {",
+                  "  pm.environment.set('bearerToken', data.access_token);",
+                  "}",
+                  "if (data.refresh_token) {",
+                  "  pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Renova a sessao usando `refreshToken` e atualiza as variaveis de token do environment."
+          },
+          "response": []
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Retorna os dados do usuario autenticado a partir do token atual."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Attendants",
+      "description": "Operacoes para criar, atualizar e remover atendentes.",
+      "item": [
+        {
+          "name": "Create Attendant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_id\": \"att-001\",\n  \"name\": \"Atendente Exemplo\",\n  \"nickname\": \"atendimento\",\n  \"type\": \"attendent\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/create/attendent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "create",
+                "attendent"
+              ]
+            },
+            "description": "Cria um atendente. Campos obrigatorios: external_id, name e type. Valores aceitos para type: attendent, manager, master."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Attendant",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_id\": \"att-001\",\n  \"name\": \"Atendente Atualizado\",\n  \"nickname\": \"supervisor\",\n  \"type\": \"manager\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/update/attendent/{{attendantExternalId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "update",
+                "attendent",
+                "{{attendantExternalId}}"
+              ]
+            },
+            "description": "Atualiza um atendente pelo external_id informado na URL."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Attendant",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/delete/attendent/{{attendantExternalId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "delete",
+                "attendent",
+                "{{attendantExternalId}}"
+              ]
+            },
+            "description": "Remove um atendente pelo external_id."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Clients",
+      "description": "Operacoes para clientes e contatos de cliente.",
+      "item": [
+        {
+          "name": "Create Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_id\": \"client-001\",\n  \"name\": \"Cliente Exemplo\",\n  \"nickname\": \"compras\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/client/create",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "client",
+                "create"
+              ]
+            },
+            "description": "Cria um cliente. O campo external_id pode ser enviado tambem como custom_id."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{clientId}},\n  \"external_id\": \"client-001\",\n  \"name\": \"Cliente Atualizado\",\n  \"nickname\": \"suporte\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/client/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "client",
+                "update"
+              ]
+            },
+            "description": "Atualiza um cliente pelo id interno."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Client Contact",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{clientId}},\n  \"external_contact_id\": \"whatsapp-client-001\",\n  \"type\": \"whatsapp\",\n  \"value\": \"5511999999999\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/client/contact",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "client",
+                "contact"
+              ]
+            },
+            "description": "Cria um contato para um cliente. Tipos aceitos: web, aplication, whatsapp, call."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Client Contact",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"5511888888888\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/client/contact/{{contactId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "client",
+                "contact",
+                "{{contactId}}"
+              ]
+            },
+            "description": "Atualiza um contato de cliente pelo id."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Client Contact",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/client/contact/{{contactId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "client",
+                "contact",
+                "{{contactId}}"
+              ]
+            },
+            "description": "Remove um contato de cliente pelo id."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Client",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/client/{{clientId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "client",
+                "{{clientId}}"
+              ]
+            },
+            "description": "Remove um cliente pelo id interno."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "description": "Consulta e recepcao de mensagens internas.",
+      "item": [
+        {
+          "name": "Receive Internal Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Mensagem interna de teste\",\n  \"channel\": \"web\",\n  \"type\": \"text\",\n  \"participant_ids\": [{{participantId}}]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/messages/receive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages",
+                "receive"
+              ]
+            },
+            "description": "Recebe uma mensagem interna autenticada, persiste em banco e dispara broadcast via Reverb."
+          },
+          "response": []
+        },
+        {
+          "name": "List Messages By Chat",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/messages?chat_id={{chatId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "chat_id",
+                  "value": "{{chatId}}"
+                }
+              ]
+            },
+            "description": "Lista as mensagens de um chat pelo id."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "description": "Endpoints publicos para recebimento de mensagens externas.",
+      "item": [
+        {
+          "name": "Receive WhatsApp Webhook",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"5511999999999\",\n  \"sender\": {\n    \"name\": \"Cliente WhatsApp\"\n  },\n  \"message\": \"Mensagem recebida via webhook\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/message/whatsapp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "message",
+                "whatsapp"
+              ]
+            },
+            "description": "Recebe mensagens de WhatsApp, cria ou reaproveita cliente/chat, persiste a mensagem e emite broadcast."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
