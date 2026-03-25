@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 
 export const ACCESS_COOKIE = "helpdesk_access_token";
 export const REFRESH_COOKIE = "helpdesk_refresh_token";
@@ -32,7 +33,7 @@ export function getHelpdeskBaseUrl() {
   );
 }
 
-function getCookieOptions() {
+export function getCookieOptions() {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
@@ -63,10 +64,19 @@ export function readTokenPayload(payload: unknown): TokenPayload {
     };
   }
 
+  const nested = isRecord(payload.data) ? payload.data : null;
   const accessToken =
-    typeof payload.access_token === "string" ? payload.access_token : null;
+    typeof payload.access_token === "string"
+      ? payload.access_token
+      : typeof nested?.access_token === "string"
+        ? nested.access_token
+        : null;
   const refreshToken =
-    typeof payload.refresh_token === "string" ? payload.refresh_token : null;
+    typeof payload.refresh_token === "string"
+      ? payload.refresh_token
+      : typeof nested?.refresh_token === "string"
+        ? nested.refresh_token
+        : null;
 
   return {
     accessToken,
@@ -136,10 +146,33 @@ export async function persistTokens(payload: unknown) {
   }
 }
 
+export function applyTokenCookies(response: NextResponse, payload: unknown) {
+  const tokens = readTokenPayload(payload);
+
+  if (tokens.accessToken) {
+    response.cookies.set(ACCESS_COOKIE, tokens.accessToken, {
+      ...getCookieOptions(),
+      maxAge: 60 * 60,
+    });
+  }
+
+  if (tokens.refreshToken) {
+    response.cookies.set(REFRESH_COOKIE, tokens.refreshToken, {
+      ...getCookieOptions(),
+      maxAge: 60 * 60 * 24 * 30,
+    });
+  }
+}
+
 export async function clearTokens() {
   const cookieStore = await cookies();
   cookieStore.delete(ACCESS_COOKIE);
   cookieStore.delete(REFRESH_COOKIE);
+}
+
+export function clearTokenCookies(response: NextResponse) {
+  response.cookies.delete(ACCESS_COOKIE);
+  response.cookies.delete(REFRESH_COOKIE);
 }
 
 export async function authorizedRequest<T = unknown>(

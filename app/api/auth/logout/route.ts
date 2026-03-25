@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
-import { clearTokens } from "@/lib/helpdesk";
+import { clearTokenCookies, clearTokens } from "@/lib/helpdesk";
 
 export async function POST() {
   await clearTokens();
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     message: "Sessao encerrada.",
   });
+
+  clearTokenCookies(response);
+  return response;
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  applyTokenCookies,
   backendRequest,
   getErrorMessage,
   persistTokens,
@@ -53,9 +54,12 @@ export async function POST(request: Request) {
     ? await backendRequest("/auth/me", { method: "GET" }, tokens.accessToken)
     : null;
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     message: "Sessao iniciada com sucesso.",
     user: me?.ok ? me.data : null,
     auth: login.data,
   });
+
+  applyTokenCookies(response, login.data);
+  return response;
 }

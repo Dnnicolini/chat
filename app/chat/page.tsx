@@ -1,13 +1,8 @@
 import HelpdeskPlayground from "@/app/ui/helpdesk-playground";
 import { getSessionSnapshot } from "@/lib/helpdesk";
-import { redirect } from "next/navigation";
 
-export default async function Home() {
+export default async function ChatPage() {
   const session = await getSessionSnapshot();
-
-  if (session.authenticated) {
-    redirect("/chat");
-  }
 
   return <HelpdeskPlayground initialSession={session} />;
 }
