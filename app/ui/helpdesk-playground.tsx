@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { SessionSnapshot } from "@/lib/helpdesk";
 
@@ -355,18 +362,30 @@ function findArrayOfRecords(payload: unknown): Record<string, unknown>[] | null 
 }
 
 function formatTimestamp(value: string) {
-  const date = new Date(value);
+  const isoLikeMatch = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/,
+  );
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
+  if (isoLikeMatch) {
+    const [, , month, day, hour, minute] = isoLikeMatch;
+    return `${day}/${month} ${hour}:${minute}`;
   }
 
-  return date.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  if (/^\d{10,13}$/.test(value)) {
+    const numeric = Number(value);
+    const date = new Date(value.length === 13 ? numeric : numeric * 1000);
+
+    if (!Number.isNaN(date.getTime())) {
+      const day = String(date.getUTCDate()).padStart(2, "0");
+      const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const hour = String(date.getUTCHours()).padStart(2, "0");
+      const minute = String(date.getUTCMinutes()).padStart(2, "0");
+
+      return `${day}/${month} ${hour}:${minute}`;
+    }
+  }
+
+  return value;
 }
 
 function formatMessageTime(record: Record<string, unknown>) {
@@ -674,13 +693,6 @@ function clearBrowserTokens() {
   window.localStorage.removeItem("helpdesk_refresh_token");
 }
 
-function splitParticipantIds(value: string) {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 function buildWebhookPayload(form: WebhookReceiveFormState) {
   return {
     object: "whatsapp_business_account",
@@ -721,6 +733,10 @@ function buildWebhookPayload(form: WebhookReceiveFormState) {
       },
     ],
   };
+}
+
+function subscribeToHydration() {
+  return () => {};
 }
 
 function Field({
@@ -804,33 +820,43 @@ function ChatItem({
 }) {
   return (
     <button
-      className={`w-full rounded-[26px] border p-4 text-left transition ${
+      className={`w-full rounded-[30px] border px-4 py-4 text-left transition ${
         active
-          ? "border-orange-200 bg-white shadow-[0_18px_40px_rgba(249,115,22,0.12)]"
-          : "border-transparent bg-white/50 hover:border-orange-100 hover:bg-white"
+          ? "border-orange-200 bg-white shadow-[0_22px_38px_rgba(249,115,22,0.12)]"
+          : "border-transparent bg-[#fff4e9] hover:border-orange-100 hover:bg-white"
       }`}
       onClick={onClick}
       type="button"
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-300 to-orange-600 text-sm font-semibold text-white">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#f7c398] to-[#db6d1c] text-sm font-semibold text-white shadow-[0_12px_24px_rgba(219,109,28,0.2)]">
           {getInitials(chat.title || chat.id)}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-base font-semibold text-stone-950">
+              <p className="truncate text-[0.98rem] font-semibold text-stone-950">
                 {chat.title}
               </p>
-              <p className="mt-1 text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-orange-600">
-                {chat.channel}
-              </p>
+              <div className="mt-1 flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-orange-600">
+                <span className="h-2 w-2 rounded-full bg-orange-500" />
+                <span>{chat.channel}</span>
+              </div>
             </div>
-            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-400">
+            <span className="shrink-0 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-400">
               {chat.updatedAt}
             </span>
           </div>
-          <p className="mt-2 truncate text-sm text-stone-500">{chat.preview}</p>
+          <div className="mt-3 flex items-end justify-between gap-3">
+            <p className="line-clamp-2 text-sm leading-6 text-stone-500">
+              {chat.preview}
+            </p>
+            {active ? (
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-orange-500 px-2 text-[0.64rem] font-semibold text-white">
+                ao vivo
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
     </button>
@@ -841,13 +867,18 @@ function MessageBubble({ message }: { message: ThreadMessage }) {
   const outgoing = message.side === "outgoing";
 
   return (
-    <div className={`flex ${outgoing ? "justify-end" : "justify-start"}`}>
+    <div className={`flex items-end gap-3 ${outgoing ? "justify-end" : "justify-start"}`}>
+      {!outgoing ? (
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f1d5bb] text-[0.72rem] font-semibold text-[#8a4a15]">
+          {getInitials(message.id)}
+        </div>
+      ) : null}
       <div className="max-w-[88%]">
         <div
           className={`rounded-[24px] px-5 py-4 shadow-[0_18px_34px_rgba(0,0,0,0.06)] ${
             outgoing
-              ? "bg-gradient-to-r from-orange-700 via-orange-600 to-orange-500 text-white"
-              : "bg-[#ececec] text-stone-800"
+              ? "rounded-br-[10px] bg-gradient-to-r from-[#b84e0a] via-[#d86a17] to-[#eb7b21] text-white"
+              : "rounded-bl-[10px] border border-white/80 bg-[#efefef] text-stone-800"
           }`}
         >
           <p className="text-sm leading-7">{message.content}</p>
@@ -860,6 +891,11 @@ function MessageBubble({ message }: { message: ThreadMessage }) {
           {message.time}
         </p>
       </div>
+      {outgoing ? (
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#f7c398] to-[#db6d1c] text-[0.72rem] font-semibold text-white">
+          Eu
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1683,12 +1719,35 @@ export default function HelpdeskPlayground({
     fallbackMessages,
   );
   const [chatSearch, setChatSearch] = useState("");
+  const hasMounted = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
   const [isRestoringSession, setIsRestoringSession] = useState(false);
+  const inboxBootstrappedRef = useRef(false);
 
   const filteredChats = liveChats.filter((chat) => {
     const haystack = `${chat.title} ${chat.preview} ${chat.channel}`.toLowerCase();
     return haystack.includes(chatSearch.toLowerCase());
   });
+  const activeChat = liveChats.find((chat) => chat.id === chatForm.chatId) ?? null;
+  const renderedMessages =
+    threadMessages.length > 0 ? threadMessages : fallbackMessages;
+  const recentResponses = Object.entries(results)
+    .flatMap(([key, result]) =>
+      result
+        ? [
+            {
+              key: key as ResultKey,
+              label: resultOrder.find((entry) => entry.key === key)?.label ?? key,
+              result,
+            },
+          ]
+        : [],
+    )
+    .slice(-4)
+    .reverse();
 
   const userName =
     String(findValueByKeys(session.user, ["name", "username", "email"]) ?? "Usuario") ||
@@ -2402,17 +2461,41 @@ export default function HelpdeskPlayground({
       setLiveChats(nextChats);
 
       if (nextChats[0]) {
+        const preferredChat =
+          nextChats.find((chat) => chat.id === chatForm.chatId) ?? nextChats[0];
+
         setChatForm((current) => ({
           ...current,
-          chatId: current.chatId || nextChats[0].id,
+          chatId: current.chatId || preferredChat.id,
           participantIds:
-            current.participantIds || nextChats[0].participantId || "",
+            current.participantIds || preferredChat.participantId || "",
+          activeChannel: preferredChat.channel || current.activeChannel,
+        }));
+        setOutboundMessageForm((current) => ({
+          ...current,
+          chatId: current.chatId || preferredChat.id,
+          channel: preferredChat.channel || current.channel,
         }));
       }
     }
 
     setNotice(getMessageFromPayload(result.payload, "Operacao concluida."));
     setBusyAction(null);
+  }
+
+  async function handleSelectChat(chat: ChatSummary) {
+    setChatForm((current) => ({
+      ...current,
+      chatId: chat.id,
+      participantIds: chat.participantId || current.participantIds,
+      activeChannel: chat.channel || current.activeChannel,
+    }));
+    setOutboundMessageForm((current) => ({
+      ...current,
+      chatId: chat.id,
+      channel: chat.channel || current.channel,
+    }));
+    await handleLoadMessages(chat.id);
   }
 
   async function handleViewChat() {
@@ -2437,27 +2520,6 @@ export default function HelpdeskPlayground({
     }
 
     setNotice(getMessageFromPayload(result.payload, "Operacao concluida."));
-    setBusyAction(null);
-  }
-
-  async function handleCreateChat() {
-    setBusyAction("chat-create");
-    const result = await requestJson("/api/chats", {
-      method: "POST",
-      body: JSON.stringify({
-        participant_ids: splitParticipantIds(chatForm.participantIds),
-        active_channel: chatForm.activeChannel,
-      }),
-    });
-    storeResult("chatCreate", result);
-
-    if (result.ok) {
-      syncChatIdentifiers(result.payload);
-      await handleListChats();
-    } else {
-      setNotice(getMessageFromPayload(result.payload, "Falha ao criar o chat."));
-    }
-
     setBusyAction(null);
   }
 
@@ -2559,7 +2621,7 @@ export default function HelpdeskPlayground({
       chatId: String(chatId),
       channel: "whatsapp",
       type: "text",
-      message: demoChatForm.message,
+      message: "",
     }));
     setChatForm((current) => ({
       ...current,
@@ -2617,33 +2679,6 @@ export default function HelpdeskPlayground({
     setBusyAction(null);
   }
 
-  async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusyAction("message-send");
-    const result = await requestJson("/api/messages", {
-      method: "POST",
-      body: JSON.stringify({
-        message: chatForm.outboundMessage,
-        channel: chatForm.messageChannel,
-        type: chatForm.messageType,
-        participant_ids: splitParticipantIds(chatForm.participantIds),
-      }),
-    });
-    storeResult("messageSend", result);
-
-    if (result.ok) {
-      await handleLoadMessages();
-      setChatForm((current) => ({
-        ...current,
-        outboundMessage: "",
-      }));
-    } else {
-      setNotice(getMessageFromPayload(result.payload, "Falha ao enviar a mensagem."));
-    }
-
-    setBusyAction(null);
-  }
-
   async function handleSendOutboundMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusyAction("message-send-outbound");
@@ -2665,6 +2700,21 @@ export default function HelpdeskPlayground({
 
     if (result.ok) {
       syncChatIdentifiers(result.payload);
+      const nextChatId =
+        String(
+          findValueByKeys(result.payload, ["chat_id", "chatId", "id"]) ??
+            outboundMessageForm.chatId ??
+            chatForm.chatId,
+        ) || "";
+
+      setOutboundMessageForm((current) => ({
+        ...current,
+        chatId: nextChatId,
+        message: "",
+        mediaUrl: "",
+        caption: "",
+        fileName: "",
+      }));
       await handleLoadMessages();
       setNotice(
         getMessageFromPayload(
@@ -2708,10 +2758,118 @@ export default function HelpdeskPlayground({
       syncChatIdentifiers(result.payload);
       await handleListChats();
     } else {
-      setNotice(getMessageFromPayload(result.payload, "Falha ao processar o webhook."));
+    setNotice(getMessageFromPayload(result.payload, "Falha ao processar o webhook."));
     }
 
     setBusyAction(null);
+  }
+
+  useEffect(() => {
+    if (!session.authenticated) {
+      inboxBootstrappedRef.current = false;
+    }
+  }, [session.authenticated]);
+
+  useEffect(() => {
+    if (!session.authenticated || pathname !== "/chat") {
+      return;
+    }
+
+    if (inboxBootstrappedRef.current) {
+      return;
+    }
+
+    inboxBootstrappedRef.current = true;
+
+    let cancelled = false;
+
+    async function preloadInbox() {
+      setBusyAction("chats-list");
+
+      const chatsResult = await requestJson(
+        `/api/chats?activeChannel=${encodeURIComponent(chatForm.activeChannel)}&perPage=${encodeURIComponent(chatForm.perPage)}`,
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      storeResult("chatsList", chatsResult);
+
+      if (!chatsResult.ok) {
+        setNotice(
+          getMessageFromPayload(
+            chatsResult.payload,
+            "Falha ao carregar a listagem de chats.",
+          ),
+        );
+        setBusyAction(null);
+        return;
+      }
+
+      const nextChats = normalizeChats(chatsResult.payload);
+      setLiveChats(nextChats);
+
+      if (!nextChats[0]) {
+        setThreadMessages(fallbackMessages);
+        setNotice("Inbox carregado, mas sem conversas disponiveis.");
+        setBusyAction(null);
+        return;
+      }
+
+      const selectedChat =
+        nextChats.find((chat) => chat.id === chatForm.chatId) ?? nextChats[0];
+
+      setChatForm((current) => ({
+        ...current,
+        chatId: current.chatId || selectedChat.id,
+        participantIds: current.participantIds || selectedChat.participantId || "",
+        activeChannel: selectedChat.channel || current.activeChannel,
+      }));
+      setOutboundMessageForm((current) => ({
+        ...current,
+        chatId: current.chatId || selectedChat.id,
+        channel: selectedChat.channel || current.channel,
+      }));
+
+      const messagesResult = await requestJson(
+        `/api/messages?chatId=${encodeURIComponent(selectedChat.id)}`,
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      storeResult("messagesList", messagesResult);
+
+      if (messagesResult.ok) {
+        const messages = normalizeMessages(messagesResult.payload);
+        setThreadMessages(messages.length > 0 ? messages : fallbackMessages);
+        setNotice("Inbox carregado com sucesso.");
+      } else {
+        setThreadMessages(fallbackMessages);
+        setNotice(
+          getMessageFromPayload(
+            messagesResult.payload,
+            "Chats carregados, mas nao foi possivel listar a thread inicial.",
+          ),
+        );
+      }
+
+      setBusyAction(null);
+    }
+
+    void preloadInbox();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatForm.activeChannel, chatForm.chatId, chatForm.perPage, pathname, session.authenticated]);
+
+  if (pathname === "/chat" && !hasMounted) {
+    return (
+      <RestoringSessionScreen message="Carregando a interface do chat e sincronizando o estado do navegador." />
+    );
   }
 
   if (pathname === "/chat" && !session.authenticated && isRestoringSession) {
@@ -2749,8 +2907,8 @@ export default function HelpdeskPlayground({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-[1740px] flex-1 flex-col px-3 py-3 sm:px-5 sm:py-5">
-      <header className={`${shellPanelClassName} p-6 sm:p-7`}>
+    <main className="mx-auto flex w-full max-w-[1820px] flex-1 flex-col px-3 py-3 sm:px-5 sm:py-5">
+      <header className="hidden">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-700">
@@ -2799,241 +2957,526 @@ export default function HelpdeskPlayground({
         ) : null}
       </header>
 
-      <div className="mt-4 grid flex-1 gap-4 xl:grid-cols-[340px_minmax(0,1fr)_440px]">
-        <aside className={`p-5 sm:p-6 ${shellPanelClassName}`}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-orange-700">
-                Chats
-              </p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
-                Inbox
-              </h2>
-            </div>
-            <button
-              className={secondaryButtonClassName}
-              disabled={busyAction === "chats-list"}
-              onClick={() => {
-                void handleListChats();
-              }}
-              type="button"
-            >
-              {busyAction === "chats-list" ? "Carregando..." : "Listar"}
-            </button>
-          </div>
-
-          <div className="mt-6 grid gap-4">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-              <Field label="Active channel">
-                <input
-                  className={inputClassName}
-                  onChange={(event) =>
-                    setChatForm((current) => ({
-                      ...current,
-                      activeChannel: event.target.value,
-                    }))
-                  }
-                  value={chatForm.activeChannel}
-                />
-              </Field>
-              <Field label="Per page">
-                <input
-                  className={inputClassName}
-                  onChange={(event) =>
-                    setChatForm((current) => ({
-                      ...current,
-                      perPage: event.target.value,
-                    }))
-                  }
-                  value={chatForm.perPage}
-                />
-              </Field>
-            </div>
-
-            <label className="block">
-              <div className="flex items-center gap-3 rounded-full bg-white px-5 py-4 shadow-sm ring-1 ring-orange-100">
-                <svg
-                  className="h-5 w-5 text-stone-500"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="m20 20-3-3" />
-                </svg>
-                <input
-                  className="w-full bg-transparent text-base text-stone-900 outline-none placeholder:text-stone-400"
-                  onChange={(event) => setChatSearch(event.target.value)}
-                  placeholder="Buscar chats..."
-                  value={chatSearch}
-                />
+      <div className="grid flex-1 overflow-hidden rounded-[38px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,250,245,0.96),rgba(255,242,229,0.96))] shadow-[0_50px_130px_rgba(194,65,12,0.15)] xl:grid-cols-[430px_minmax(0,1fr)_320px]">
+        <aside className="border-b border-orange-100/80 bg-white/72 xl:border-b-0 xl:border-r">
+          <div className="grid h-full min-h-[320px] lg:grid-cols-[88px_minmax(0,1fr)]">
+            <div className="flex flex-row items-center justify-between gap-3 border-b border-orange-100/80 bg-[linear-gradient(180deg,rgba(255,244,233,0.96),rgba(255,238,221,0.94))] px-4 py-4 lg:flex-col lg:justify-between lg:border-b-0 lg:border-r lg:px-3 lg:py-6">
+              <div className="flex items-center gap-3 lg:flex-col">
+                <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-gradient-to-br from-[#f0b37f] to-[#d86a17] text-xl font-semibold text-white shadow-[0_16px_32px_rgba(216,106,23,0.28)]">
+                  H.
+                </div>
+                <div className="lg:hidden">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
+                    Inbox
+                  </p>
+                  <p className="mt-1 text-sm text-stone-500">Painel de chats</p>
+                </div>
               </div>
-            </label>
-          </div>
 
-          <div className="mt-6 space-y-4">
-            {filteredChats.length > 0 ? (
-              filteredChats.map((chat) => (
-                <ChatItem
-                  active={chat.id === chatForm.chatId}
-                  chat={chat}
-                  key={chat.id}
+              <div className="flex items-center gap-3 lg:flex-col">
+                <button
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-[18px] border border-orange-200/80 bg-white text-stone-700 shadow-sm transition hover:border-orange-300 hover:text-orange-700"
+                  disabled={busyAction === "chats-list"}
                   onClick={() => {
-                    setChatForm((current) => ({
-                      ...current,
-                      chatId: chat.id,
-                      participantIds: chat.participantId || current.participantIds,
-                    }));
+                    void handleListChats();
                   }}
-                />
-              ))
-            ) : (
-              <div className="rounded-[24px] border border-dashed border-orange-200 bg-white/70 px-4 py-6 text-sm text-stone-500">
-                Nenhum chat carregado. Use `Chats / List` para popular a lista.
+                  title="Atualizar inbox"
+                  type="button"
+                >
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                    <path d="M21 3v6h-6" />
+                  </svg>
+                </button>
+                <button
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-[18px] border border-orange-200/80 bg-white text-stone-700 shadow-sm transition hover:border-orange-300 hover:text-orange-700"
+                  disabled={busyAction === "me"}
+                  onClick={() => {
+                    void handleLoadMe();
+                  }}
+                  title="Consultar perfil"
+                  type="button"
+                >
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z" />
+                    <path d="M4 20a8 8 0 0 1 16 0" />
+                  </svg>
+                </button>
+                <button
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-[18px] border border-orange-200/80 bg-white text-stone-700 shadow-sm transition hover:border-orange-300 hover:text-orange-700"
+                  disabled={busyAction === "refresh"}
+                  onClick={() => {
+                    void handleRefresh();
+                  }}
+                  title="Renovar token"
+                  type="button"
+                >
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M20 6v6h-6" />
+                    <path d="M4 18v-6h6" />
+                    <path d="M20 12a8 8 0 0 0-14.9-4" />
+                    <path d="M4 12a8 8 0 0 0 14.9 4" />
+                  </svg>
+                </button>
               </div>
-            )}
+
+              <div className="flex items-center gap-3 lg:flex-col">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-sm font-semibold text-orange-700 shadow-sm">
+                  {getInitials(userName)}
+                </div>
+                <button
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-[18px] border border-orange-200/80 bg-white text-stone-700 shadow-sm transition hover:border-orange-300 hover:text-orange-700"
+                  disabled={busyAction === "logout"}
+                  onClick={() => {
+                    void handleLogout();
+                  }}
+                  title="Sair"
+                  type="button"
+                >
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                    <path d="M10 17l5-5-5-5" />
+                    <path d="M15 12H3" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 flex-col p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-orange-700">
+                    Helpdesk Inbox
+                  </p>
+                  <h1 className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">
+                    Chats
+                  </h1>
+                </div>
+                <span className="rounded-full bg-[#fff1e3] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-orange-700">
+                  {filteredChats.length} ativos
+                </span>
+              </div>
+
+              <label className="mt-6 block">
+                <div className="flex items-center gap-3 rounded-full border border-white/80 bg-white px-4 py-3 shadow-[0_16px_30px_rgba(0,0,0,0.05)]">
+                  <svg
+                    className="h-5 w-5 text-stone-500"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m20 20-3-3" />
+                  </svg>
+                  <input
+                    className="w-full bg-transparent text-sm text-stone-900 outline-none placeholder:text-stone-400"
+                    onChange={(event) => setChatSearch(event.target.value)}
+                    placeholder="Buscar conversas..."
+                    value={chatSearch}
+                  />
+                </div>
+              </label>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-[24px] border border-orange-100 bg-[#fff6ee] px-4 py-3">
+                  <p className="text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-stone-500">
+                    Canal
+                  </p>
+                  <input
+                    className="mt-2 w-full bg-transparent text-sm font-semibold text-stone-900 outline-none"
+                    onChange={(event) =>
+                      setChatForm((current) => ({
+                        ...current,
+                        activeChannel: event.target.value,
+                      }))
+                    }
+                    value={chatForm.activeChannel}
+                  />
+                </div>
+                <div className="rounded-[24px] border border-orange-100 bg-[#fff6ee] px-4 py-3">
+                  <p className="text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-stone-500">
+                    Per page
+                  </p>
+                  <input
+                    className="mt-2 w-full bg-transparent text-sm font-semibold text-stone-900 outline-none"
+                    onChange={(event) =>
+                      setChatForm((current) => ({
+                        ...current,
+                        perPage: event.target.value,
+                      }))
+                    }
+                    value={chatForm.perPage}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                {filteredChats.length > 0 ? (
+                  filteredChats.map((chat) => (
+                    <ChatItem
+                      active={chat.id === chatForm.chatId}
+                      chat={chat}
+                      key={chat.id}
+                      onClick={() => {
+                        void handleSelectChat(chat);
+                      }}
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-[28px] border border-dashed border-orange-200 bg-[#fff8f1] px-5 py-8 text-sm leading-6 text-stone-500">
+                    Nenhum chat carregado ainda. Atualize o inbox ou abra uma conversa no painel da direita digitando o numero do cliente.
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 rounded-[28px] border border-orange-100 bg-[linear-gradient(180deg,#fff7ef,#fff2e5)] p-4">
+                <p className="text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-stone-500">
+                  Conexao ativa
+                </p>
+                <p className="mt-2 text-sm font-semibold text-stone-900">{userName}</p>
+                <p className="mt-1 break-all text-xs leading-5 text-stone-500">
+                  {userEmail || session.baseUrl}
+                </p>
+              </div>
+            </div>
           </div>
         </aside>
 
-        <section className={`flex min-h-[780px] flex-col overflow-hidden ${shellPanelClassName}`}>
-          <header className="border-b border-orange-100 px-5 py-5 sm:px-7">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <section className="flex min-h-[760px] flex-col bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.96),rgba(255,245,236,0.92)_40%,rgba(255,238,225,0.9)_100%)]">
+          <header className="border-b border-orange-100/80 px-5 py-5 sm:px-7">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-orange-300 to-orange-600 text-lg font-semibold text-white shadow-sm">
-                  {getInitials(chatForm.chatId || "HC")}
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#f3bf91] to-[#d86a17] text-lg font-semibold text-white shadow-[0_18px_38px_rgba(216,106,23,0.24)]">
+                  {getInitials(activeChat?.title || chatForm.chatId || "HC")}
                 </div>
                 <div>
-                  <h2 className="text-3xl font-semibold tracking-tight text-stone-950">
-                    Chat {chatForm.chatId || "selecionado"}
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-orange-700">
+                    Atendimento
+                  </p>
+                  <h2 className="mt-2 text-3xl font-semibold tracking-tight text-stone-950">
+                    {activeChat?.title || "Selecione uma conversa"}
                   </h2>
                   <p className="mt-1 text-sm text-stone-500">
-                    Participant IDs: {chatForm.participantIds || "nao informado"}
+                    {activeChat
+                      ? `${activeChat.channel} • Chat ID ${activeChat.id}`
+                      : "Abra uma conversa no painel da direita ou clique em um chat da lista."}
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-2">
                 <button
-                  className={secondaryButtonClassName}
-                  disabled={busyAction === "chat-view"}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-orange-200/80 bg-white text-stone-700 shadow-sm transition hover:border-orange-300 hover:text-orange-700"
+                  disabled={busyAction === "chat-view" || !chatForm.chatId.trim()}
                   onClick={() => {
                     void handleViewChat();
                   }}
+                  title="Visualizar chat"
                   type="button"
                 >
-                  {busyAction === "chat-view" ? "Abrindo..." : "View chat"}
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
                 </button>
                 <button
-                  className={secondaryButtonClassName}
-                  disabled={busyAction === "messages-list"}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-orange-200/80 bg-white text-stone-700 shadow-sm transition hover:border-orange-300 hover:text-orange-700"
+                  disabled={busyAction === "messages-list" || !chatForm.chatId.trim()}
                   onClick={() => {
                     void handleLoadMessages();
                   }}
+                  title="Atualizar mensagens"
                   type="button"
                 >
-                  {busyAction === "messages-list" ? "Listando..." : "List messages"}
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                    <path d="M21 3v6h-6" />
+                  </svg>
                 </button>
               </div>
             </div>
+
+            {notice ? (
+              <div className="mt-4 rounded-[20px] border border-orange-200 bg-orange-50/90 px-4 py-3 text-sm text-orange-900">
+                {notice}
+              </div>
+            ) : null}
           </header>
 
-          <div className="grid flex-1 gap-4 bg-[linear-gradient(180deg,#f5f3f1,#fcfcfc)] px-4 py-4 sm:px-7 sm:py-6">
-            <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className={`${cardClassName} space-y-4`}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Chat ID">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setChatForm((current) => ({
-                          ...current,
-                          chatId: event.target.value,
-                        }))
-                      }
-                      value={chatForm.chatId}
-                    />
-                  </Field>
-                  <Field label="Participant IDs">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setChatForm((current) => ({
-                          ...current,
-                          participantIds: event.target.value,
-                        }))
-                      }
-                      placeholder="10,11"
-                      value={chatForm.participantIds}
-                    />
-                  </Field>
+          <div className="flex flex-1 overflow-hidden px-4 py-4 sm:px-6 sm:py-6">
+            <div className="flex h-full w-full flex-col overflow-hidden rounded-[34px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(249,245,241,0.92))] shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+              <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+                <div className="mb-6 flex justify-center">
+                  <span className="rounded-full bg-stone-200/80 px-4 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-stone-500">
+                    {activeChat?.updatedAt || "Hoje"}
+                  </span>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="To attendent id">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setChatForm((current) => ({
-                          ...current,
-                          toAttendentId: event.target.value,
-                        }))
-                      }
-                      value={chatForm.toAttendentId}
-                    />
-                  </Field>
-                  <Field label="Create chat with channel">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setChatForm((current) => ({
-                          ...current,
-                          activeChannel: event.target.value,
-                        }))
-                      }
-                      value={chatForm.activeChannel}
-                    />
-                  </Field>
+                <div className="space-y-5">
+                  {renderedMessages.map((message) => (
+                    <MessageBubble key={message.id} message={message} />
+                  ))}
                 </div>
+              </div>
+
+              <form
+                className="border-t border-orange-100/80 bg-white/92 p-4 sm:p-5"
+                onSubmit={handleSendOutboundMessage}
+              >
+                <div className="rounded-[28px] border border-orange-200/70 bg-white px-3 py-3 shadow-[0_18px_40px_rgba(216,106,23,0.08)]">
+                  <div className="flex items-end gap-3">
+                    <button
+                      className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-orange-200 bg-[#fff4e7] text-orange-700 transition hover:bg-[#ffe8d1]"
+                      disabled={busyAction === "messages-list" || !chatForm.chatId.trim()}
+                      onClick={() => {
+                        void handleLoadMessages();
+                      }}
+                      title="Atualizar thread"
+                      type="button"
+                    >
+                      <svg
+                        className="h-5 w-5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                      >
+                        <path d="M12 5v14" />
+                        <path d="M5 12h14" />
+                      </svg>
+                    </button>
+
+                    <textarea
+                      className="min-h-12 flex-1 resize-none bg-transparent px-1 py-2 text-sm leading-7 text-stone-900 outline-none placeholder:text-stone-400"
+                      disabled={!chatForm.chatId.trim()}
+                      onChange={(event) =>
+                        setOutboundMessageForm((current) => ({
+                          ...current,
+                          message: event.target.value,
+                        }))
+                      }
+                      placeholder={
+                        chatForm.chatId.trim()
+                          ? "Digite sua mensagem..."
+                          : "Abra uma conversa para enviar mensagens."
+                      }
+                      rows={1}
+                      value={outboundMessageForm.message}
+                    />
+
+                    <button
+                      className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-[#b84e0a] to-[#eb7b21] text-white shadow-[0_16px_28px_rgba(216,106,23,0.32)] transition hover:from-[#9f4206] hover:to-[#dd6f17] disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={
+                        busyAction === "message-send-outbound" ||
+                        !chatForm.chatId.trim() ||
+                        !outboundMessageForm.message.trim()
+                      }
+                      type="submit"
+                    >
+                      <svg
+                        className="h-5 w-5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="m5 12 14-7-4 7 4 7-14-7Z" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[#fff1e3] px-3 py-1 text-orange-700">
+                      {outboundMessageForm.channel || chatForm.activeChannel}
+                    </span>
+                    <span className="rounded-full bg-stone-100 px-3 py-1">
+                      {outboundMessageForm.type}
+                    </span>
+                  </div>
+                  <span>Chat ID {chatForm.chatId || "aguardando"}</span>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <aside className="border-t border-orange-100/80 bg-white/76 p-5 sm:p-6 xl:border-t-0 xl:border-l">
+          <div className="flex h-full flex-col gap-5">
+            <div className="rounded-[32px] border border-orange-100 bg-[linear-gradient(180deg,#fff8f2,#fff0df)] p-5 text-center shadow-[0_18px_42px_rgba(216,106,23,0.1)]">
+              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-[#f3c299] via-[#e89352] to-[#b84e0a] text-2xl font-semibold text-white shadow-[0_22px_44px_rgba(216,106,23,0.28)]">
+                {getInitials(activeChat?.title || demoChatForm.contactName || "HC")}
+              </div>
+              <h3 className="mt-4 text-3xl font-semibold tracking-tight text-stone-950">
+                {activeChat?.title || demoChatForm.contactName || "Novo contato"}
+              </h3>
+              <p className="mt-2 text-sm font-semibold text-orange-700">
+                {activeChat?.channel || "WhatsApp"} • Conversa ativa
+              </p>
+
+              <div className="mt-5 grid grid-cols-2 gap-3 text-left">
+                <div className="rounded-[24px] bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-stone-500">
+                    Chat ID
+                  </p>
+                  <p className="mt-2 truncate text-sm font-semibold text-stone-900">
+                    {chatForm.chatId || "Aguardando"}
+                  </p>
+                </div>
+                <div className="rounded-[24px] bg-white/90 px-4 py-3 shadow-sm">
+                  <p className="text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-stone-500">
+                    Participante
+                  </p>
+                  <p className="mt-2 truncate text-sm font-semibold text-stone-900">
+                    {chatForm.participantIds || "Nao informado"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form
+              className="rounded-[30px] border border-orange-100 bg-[#fff7ef] p-5 shadow-[0_16px_36px_rgba(216,106,23,0.08)]"
+              onSubmit={handleDemoWhatsAppChat}
+            >
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-orange-700">
+                Quick Start
+              </p>
+              <h3 className="mt-3 text-xl font-semibold tracking-tight text-stone-950">
+                Digite o numero e envie
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-stone-500">
+                Este fluxo abre ou reaproveita a sessao WhatsApp e envia a primeira mensagem no mesmo submit.
+              </p>
+
+              <div className="mt-5 grid gap-4">
+                <Field label="Numero WhatsApp">
+                  <input
+                    className={inputClassName}
+                    onChange={(event) =>
+                      setDemoChatForm((current) => ({
+                        ...current,
+                        phoneNumber: event.target.value,
+                      }))
+                    }
+                    value={demoChatForm.phoneNumber}
+                  />
+                </Field>
+                <Field label="Nome do contato">
+                  <input
+                    className={inputClassName}
+                    onChange={(event) =>
+                      setDemoChatForm((current) => ({
+                        ...current,
+                        contactName: event.target.value,
+                      }))
+                    }
+                    value={demoChatForm.contactName}
+                  />
+                </Field>
+                <Field label="Mensagem inicial">
+                  <textarea
+                    className={`${inputClassName} min-h-28 resize-y`}
+                    onChange={(event) =>
+                      setDemoChatForm((current) => ({
+                        ...current,
+                        message: event.target.value,
+                      }))
+                    }
+                    value={demoChatForm.message}
+                  />
+                </Field>
 
                 <div className="flex flex-wrap gap-3">
                   <button
                     className={primaryButtonClassName}
-                    disabled={busyAction === "chat-create"}
-                    onClick={() => {
-                      void handleCreateChat();
-                    }}
-                    type="button"
+                    disabled={busyAction === "demo-chat"}
+                    type="submit"
                   >
-                    {busyAction === "chat-create" ? "Criando..." : "Create chat"}
+                    {busyAction === "demo-chat"
+                      ? "Abrindo chat..."
+                      : "Abrir chat e enviar"}
                   </button>
                   <button
                     className={secondaryButtonClassName}
-                    disabled={busyAction === "chat-transfer"}
+                    disabled={busyAction === "chats-list"}
+                    onClick={() => {
+                      void handleListChats();
+                    }}
+                    type="button"
+                  >
+                    {busyAction === "chats-list" ? "Atualizando..." : "Atualizar inbox"}
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            <div className="rounded-[30px] border border-orange-100 bg-white/94 p-5 shadow-[0_16px_36px_rgba(216,106,23,0.07)]">
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-orange-700">
+                Operacao
+              </p>
+
+              <div className="mt-4 grid gap-4">
+                <Field label="Transferir para atendente">
+                  <input
+                    className={inputClassName}
+                    onChange={(event) =>
+                      setChatForm((current) => ({
+                        ...current,
+                        toAttendentId: event.target.value,
+                      }))
+                    }
+                    value={chatForm.toAttendentId}
+                  />
+                </Field>
+
+                <div className="grid gap-3">
+                  <button
+                    className={secondaryButtonClassName}
+                    disabled={busyAction === "chat-transfer" || !chatForm.chatId.trim()}
                     onClick={() => {
                       void handleTransferChat();
                     }}
                     type="button"
                   >
-                    {busyAction === "chat-transfer" ? "Transferindo..." : "Transfer chat"}
-                  </button>
-                </div>
-              </div>
-
-              <div className={cardClassName}>
-                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-orange-700">
-                  Session actions
-                </p>
-                <div className="mt-5 grid gap-3">
-                  <button
-                    className={secondaryButtonClassName}
-                    disabled={busyAction === "session"}
-                    onClick={() => {
-                      void loadSession();
-                    }}
-                    type="button"
-                  >
-                    Recarregar sessao
+                    {busyAction === "chat-transfer" ? "Transferindo..." : "Transferir chat"}
                   </button>
                   <button
                     className={secondaryButtonClassName}
@@ -3045,206 +3488,61 @@ export default function HelpdeskPlayground({
                   >
                     {busyAction === "me" ? "Consultando..." : "Consultar /auth/me"}
                   </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-center">
-              <span className="rounded-full bg-stone-200/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">
-                Mensagens
-              </span>
-            </div>
-
-            <div className="flex-1 space-y-6 overflow-y-auto pr-1">
-              {(threadMessages.length > 0 ? threadMessages : fallbackMessages).map(
-                (message) => (
-                  <MessageBubble key={message.id} message={message} />
-                ),
-              )}
-            </div>
-
-            <form className={cardClassName} onSubmit={handleSendMessage}>
-              <div className="grid gap-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Message channel">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setChatForm((current) => ({
-                          ...current,
-                          messageChannel: event.target.value,
-                        }))
-                      }
-                      value={chatForm.messageChannel}
-                    />
-                  </Field>
-                  <Field label="Message type">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setChatForm((current) => ({
-                          ...current,
-                          messageType: event.target.value,
-                        }))
-                      }
-                      value={chatForm.messageType}
-                    />
-                  </Field>
-                </div>
-
-                <Field label="Outbound message">
-                  <textarea
-                    className={`${inputClassName} min-h-28 resize-y`}
-                    onChange={(event) =>
-                      setChatForm((current) => ({
-                        ...current,
-                        outboundMessage: event.target.value,
-                      }))
-                    }
-                    value={chatForm.outboundMessage}
-                  />
-                </Field>
-
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    className={primaryButtonClassName}
-                    disabled={busyAction === "message-send"}
-                    type="submit"
-                  >
-                    {busyAction === "message-send" ? "Enviando..." : "Send internal message"}
-                  </button>
                   <button
                     className={secondaryButtonClassName}
-                    disabled={busyAction === "messages-list"}
+                    disabled={busyAction === "refresh"}
                     onClick={() => {
-                      void handleLoadMessages();
+                      void handleRefresh();
                     }}
                     type="button"
                   >
-                    Recarregar thread
+                    {busyAction === "refresh" ? "Atualizando..." : "Refresh token"}
                   </button>
                 </div>
               </div>
-            </form>
+            </div>
 
-            <form className={cardClassName} onSubmit={handleSendOutboundMessage}>
-              <div className="grid gap-4">
-                <div>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-orange-700">
-                    Outbound message
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-stone-500">
-                    Fluxo da collection para `POST /messages/send`, incluindo texto
-                    ou midia por `chat_id`.
-                  </p>
-                </div>
+            <div className="min-h-0 flex-1 rounded-[30px] border border-orange-100 bg-[linear-gradient(180deg,#fffdfb,#fff3e6)] p-5 shadow-[0_16px_36px_rgba(216,106,23,0.06)]">
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-orange-700">
+                Atividade da API
+              </p>
 
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <Field label="Chat ID">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setOutboundMessageForm((current) => ({
-                          ...current,
-                          chatId: event.target.value,
-                        }))
-                      }
-                      value={outboundMessageForm.chatId}
-                    />
-                  </Field>
-                  <Field label="Channel">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setOutboundMessageForm((current) => ({
-                          ...current,
-                          channel: event.target.value,
-                        }))
-                      }
-                      value={outboundMessageForm.channel}
-                    />
-                  </Field>
-                  <Field label="Type">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setOutboundMessageForm((current) => ({
-                          ...current,
-                          type: event.target.value,
-                        }))
-                      }
-                      value={outboundMessageForm.type}
-                    />
-                  </Field>
-                </div>
-
-                <Field label="Message">
-                  <textarea
-                    className={`${inputClassName} min-h-28 resize-y`}
-                    onChange={(event) =>
-                      setOutboundMessageForm((current) => ({
-                        ...current,
-                        message: event.target.value,
-                      }))
-                    }
-                    value={outboundMessageForm.message}
-                  />
-                </Field>
-
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <Field label="Media URL">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setOutboundMessageForm((current) => ({
-                          ...current,
-                          mediaUrl: event.target.value,
-                        }))
-                      }
-                      value={outboundMessageForm.mediaUrl}
-                    />
-                  </Field>
-                  <Field label="Caption">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setOutboundMessageForm((current) => ({
-                          ...current,
-                          caption: event.target.value,
-                        }))
-                      }
-                      value={outboundMessageForm.caption}
-                    />
-                  </Field>
-                  <Field label="Filename">
-                    <input
-                      className={inputClassName}
-                      onChange={(event) =>
-                        setOutboundMessageForm((current) => ({
-                          ...current,
-                          fileName: event.target.value,
-                        }))
-                      }
-                      value={outboundMessageForm.fileName}
-                    />
-                  </Field>
-                </div>
-
-                <button
-                  className={secondaryButtonClassName}
-                  disabled={busyAction === "message-send-outbound"}
-                  type="submit"
-                >
-                  {busyAction === "message-send-outbound"
-                    ? "Enviando..."
-                    : "Send outbound message"}
-                </button>
+              <div className="mt-4 space-y-3">
+                {recentResponses.length > 0 ? (
+                  recentResponses.map((entry) => (
+                    <div
+                      className="rounded-[22px] border border-orange-100 bg-white/90 px-4 py-3"
+                      key={entry.key}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-stone-900">
+                          {entry.label}
+                        </p>
+                        <span className="rounded-full bg-[#2b1406] px-3 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-orange-100">
+                          HTTP {entry.result.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[24px] border border-dashed border-orange-200 bg-white/80 px-4 py-5 text-sm leading-6 text-stone-500">
+                    As ultimas respostas dos endpoints aparecem aqui conforme voce autentica, abre chats e envia mensagens.
+                  </div>
+                )}
               </div>
-            </form>
-          </div>
-        </section>
 
-        <aside className={`p-5 sm:p-6 ${shellPanelClassName}`}>
+              {recentResponses[0] ? (
+                <div className="mt-4 rounded-[24px] bg-[#2b1406] p-4 text-xs text-orange-50">
+                  <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words">
+                    {JSON.stringify(recentResponses[0].result.payload, null, 2)}
+                  </pre>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </aside>
+
+        <aside className="hidden">
           <div className="h-full space-y-4 overflow-y-auto pr-1">
             <Section
               defaultOpen
