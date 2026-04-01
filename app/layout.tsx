@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Helpdesk API Playground",
-  description: "Interface de teste para login, clientes e chats do Helpdesk API",
+  title: "Helpdesk Front Office",
+  description:
+    "Front operacional para onboarding, inbox, clientes e webhooks da Helpdesk API",
 };
 
 export default function RootLayout({

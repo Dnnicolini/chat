@@ -16,10 +16,16 @@ type RequestOptions = RequestInit & {
 type AuthMode = "login" | "register";
 type FeedbackTone = "error" | "info" | "success";
 type ResultKey =
+  | "authChallenge"
+  | "authVerify"
   | "authLogin"
+  | "authRegisterBasic"
   | "authRegister"
+  | "authRegisterComplete"
   | "authMe"
   | "authRefresh"
+  | "clientRegister"
+  | "chatBootstrap"
   | "attendantCreate"
   | "attendantUpdate"
   | "attendantDelete"
@@ -37,6 +43,7 @@ type ResultKey =
   | "chatTransfer"
   | "messagesList"
   | "messageSend"
+  | "messageSendOutbound"
   | "webhookVerify"
   | "webhookReceive";
 
@@ -65,11 +72,56 @@ type RegisterFormState = {
   typeContact: string;
 };
 
+type ChallengeFormState = {
+  channel: string;
+  identifier: string;
+};
+
+type VerifyFormState = {
+  challengeId: string;
+  code: string;
+};
+
+type RegisterBasicFormState = {
+  email: string;
+  password: string;
+  confirmPassword: string;
+  name: string;
+  birthDate: string;
+  contact: string;
+};
+
+type CompleteRegistrationFormState = {
+  name: string;
+  type: string;
+  gender: string;
+  birthDate: string;
+  cpfCnpj: string;
+  zipCode: string;
+  address: string;
+  district: string;
+  number: string;
+  cityName: string;
+  stateCode: string;
+  countryCode: string;
+  typeContact: string;
+  contact: string;
+};
+
 type AttendantFormState = {
   externalId: string;
   name: string;
   nickname: string;
   type: string;
+};
+
+type ClientRegisterFormState = {
+  externalId: string;
+  name: string;
+  nickname: string;
+  contactType: string;
+  contactValue: string;
+  externalContactId: string;
 };
 
 type ClientFormState = {
@@ -124,6 +176,28 @@ type WhatsAppSessionFormState = {
   contactName: string;
 };
 
+type BootstrapChatFormState = {
+  from: string;
+  senderName: string;
+  message: string;
+};
+
+type OutboundMessageFormState = {
+  chatId: string;
+  channel: string;
+  type: string;
+  message: string;
+  mediaUrl: string;
+  caption: string;
+  fileName: string;
+};
+
+type DemoChatFormState = {
+  phoneNumber: string;
+  contactName: string;
+  message: string;
+};
+
 type ThreadMessage = {
   id: string;
   content: string;
@@ -152,10 +226,16 @@ const secondaryButtonClassName =
   "inline-flex items-center justify-center rounded-full border border-orange-200 bg-white/90 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-60";
 
 const resultOrder: { key: ResultKey; label: string }[] = [
+  { key: "authChallenge", label: "Auth / Challenge" },
+  { key: "authVerify", label: "Auth / Verify" },
   { key: "authLogin", label: "Auth / Login" },
+  { key: "authRegisterBasic", label: "Auth / Register Basic" },
   { key: "authRegister", label: "Auth / Register" },
+  { key: "authRegisterComplete", label: "Auth / Register Complete" },
   { key: "authMe", label: "Auth / Me" },
   { key: "authRefresh", label: "Auth / Refresh" },
+  { key: "clientRegister", label: "Clients / Register" },
+  { key: "chatBootstrap", label: "Chats / Bootstrap" },
   { key: "attendantCreate", label: "Attendants / Create" },
   { key: "attendantUpdate", label: "Attendants / Update" },
   { key: "attendantDelete", label: "Attendants / Delete" },
@@ -173,6 +253,7 @@ const resultOrder: { key: ResultKey; label: string }[] = [
   { key: "chatTransfer", label: "Chats / Transfer" },
   { key: "messagesList", label: "Messages / List" },
   { key: "messageSend", label: "Messages / Receive Internal" },
+  { key: "messageSendOutbound", label: "Messages / Send Outbound" },
   { key: "webhookVerify", label: "Webhooks / Verify" },
   { key: "webhookReceive", label: "Webhooks / Receive" },
 ];
@@ -788,26 +869,44 @@ function AuthScreen({
   setMode,
   loginForm,
   setLoginForm,
+  challengeForm,
+  setChallengeForm,
+  verifyForm,
+  setVerifyForm,
   registerForm,
   setRegisterForm,
+  registerBasicForm,
+  setRegisterBasicForm,
   loginErrors,
   registerErrors,
   feedback,
   busyAction,
   onLogin,
+  onChallenge,
+  onVerify,
+  onRegisterBasic,
   onRegister,
 }: {
   mode: AuthMode;
   setMode: (value: AuthMode) => void;
   loginForm: LoginFormState;
   setLoginForm: (value: LoginFormState) => void;
+  challengeForm: ChallengeFormState;
+  setChallengeForm: (value: ChallengeFormState) => void;
+  verifyForm: VerifyFormState;
+  setVerifyForm: (value: VerifyFormState) => void;
   registerForm: RegisterFormState;
   setRegisterForm: (value: RegisterFormState) => void;
+  registerBasicForm: RegisterBasicFormState;
+  setRegisterBasicForm: (value: RegisterBasicFormState) => void;
   loginErrors: Record<string, string | undefined>;
   registerErrors: Record<string, string | undefined>;
   feedback: { tone: FeedbackTone; message: string } | null;
   busyAction: string | null;
   onLogin: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onChallenge: () => Promise<void>;
+  onVerify: () => Promise<void>;
+  onRegisterBasic: () => Promise<void>;
   onRegister: (event: FormEvent<HTMLFormElement>) => Promise<void>;
 }) {
   const isLogin = mode === "login";
@@ -827,25 +926,27 @@ function AuthScreen({
             <div>
               <p className="text-2xl font-semibold tracking-tight">Helpdesk API</p>
               <p className="mt-3 text-sm text-orange-50/84">
-                Console BFF para Login, Register, Chats, Clients e Webhooks.
+                Front office conectado ao BFF local para autenticacao, onboarding,
+                inbox e integracoes da Helpdesk API.
               </p>
             </div>
 
             <div className="max-w-md py-10 lg:py-0">
               <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-100/85">
-                Integracao completa
+                Fluxos operacionais
               </p>
               <h1 className="mt-5 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-                Autentique, cadastre e valide os fluxos reais da Helpdesk API.
+                Autentique, cadastre clientes e opere conversas reais da Helpdesk
+                API.
               </h1>
               <p className="mt-5 text-base leading-8 text-orange-50/92">
-                O cadastro agora usa `POST /auth/register` e a area autenticada
-                expõe os grupos documentados na colecao Postman.
+                A tela autenticada organiza a API em jornadas de front: entrada
+                do cliente, conversa, transferencia e webhook.
               </p>
             </div>
 
             <div className="hidden text-sm text-orange-100/70 lg:block">
-              Next 16 App Router • Cookie session • Endpoint-by-endpoint testing
+              Next 16 App Router • Cookie session • Front orientado por fluxo
             </div>
           </div>
         </div>
@@ -934,6 +1035,96 @@ function AuthScreen({
                 >
                   {busyAction === "login" ? "Entrando..." : "Entrar"}
                 </button>
+
+                <div className="rounded-[26px] border border-orange-100 bg-orange-50/70 p-5">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-orange-700">
+                    OTP via Challenge
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-stone-500">
+                    Fluxo vindo da collection Postman: `POST /auth/challenge` e
+                    `POST /auth/verify`.
+                  </p>
+
+                  <div className="mt-4 grid gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Channel">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setChallengeForm({
+                              ...challengeForm,
+                              channel: event.target.value,
+                            })
+                          }
+                          value={challengeForm.channel}
+                        />
+                      </Field>
+                      <Field label="Identifier">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setChallengeForm({
+                              ...challengeForm,
+                              identifier: event.target.value,
+                            })
+                          }
+                          value={challengeForm.identifier}
+                        />
+                      </Field>
+                    </div>
+                    <button
+                      className={secondaryButtonClassName}
+                      disabled={busyAction === "challenge"}
+                      onClick={() => {
+                        void onChallenge();
+                      }}
+                      type="button"
+                    >
+                      {busyAction === "challenge"
+                        ? "Solicitando..."
+                        : "Solicitar challenge"}
+                    </button>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 border-t border-orange-100 pt-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Challenge ID">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setVerifyForm({
+                              ...verifyForm,
+                              challengeId: event.target.value,
+                            })
+                          }
+                          value={verifyForm.challengeId}
+                        />
+                      </Field>
+                      <Field label="Code">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setVerifyForm({
+                              ...verifyForm,
+                              code: event.target.value,
+                            })
+                          }
+                          value={verifyForm.code}
+                        />
+                      </Field>
+                    </div>
+                    <button
+                      className={secondaryButtonClassName}
+                      disabled={busyAction === "verify"}
+                      onClick={() => {
+                        void onVerify();
+                      }}
+                      type="button"
+                    >
+                      {busyAction === "verify" ? "Validando..." : "Validar challenge"}
+                    </button>
+                  </div>
+                </div>
               </form>
             ) : (
               <form className="mt-7 space-y-4" onSubmit={onRegister}>
@@ -1180,6 +1371,111 @@ function AuthScreen({
                 >
                   {busyAction === "register" ? "Cadastrando..." : "Criar conta"}
                 </button>
+
+                <div className="rounded-[26px] border border-orange-100 bg-orange-50/70 p-5">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-orange-700">
+                    Register Basic
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-stone-500">
+                    Fluxo simplificado da collection para `POST /auth/register/basic`.
+                  </p>
+
+                  <div className="mt-4 grid gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Email">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setRegisterBasicForm({
+                              ...registerBasicForm,
+                              email: event.target.value,
+                            })
+                          }
+                          value={registerBasicForm.email}
+                        />
+                      </Field>
+                      <Field label="Name">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setRegisterBasicForm({
+                              ...registerBasicForm,
+                              name: event.target.value,
+                            })
+                          }
+                          value={registerBasicForm.name}
+                        />
+                      </Field>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Password">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setRegisterBasicForm({
+                              ...registerBasicForm,
+                              password: event.target.value,
+                            })
+                          }
+                          type="password"
+                          value={registerBasicForm.password}
+                        />
+                      </Field>
+                      <Field label="Password confirmation">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setRegisterBasicForm({
+                              ...registerBasicForm,
+                              confirmPassword: event.target.value,
+                            })
+                          }
+                          type="password"
+                          value={registerBasicForm.confirmPassword}
+                        />
+                      </Field>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Birth date">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setRegisterBasicForm({
+                              ...registerBasicForm,
+                              birthDate: event.target.value,
+                            })
+                          }
+                          type="date"
+                          value={registerBasicForm.birthDate}
+                        />
+                      </Field>
+                      <Field label="Contact">
+                        <input
+                          className={inputClassName}
+                          onChange={(event) =>
+                            setRegisterBasicForm({
+                              ...registerBasicForm,
+                              contact: event.target.value,
+                            })
+                          }
+                          value={registerBasicForm.contact}
+                        />
+                      </Field>
+                    </div>
+                    <button
+                      className={secondaryButtonClassName}
+                      disabled={busyAction === "register-basic"}
+                      onClick={() => {
+                        void onRegisterBasic();
+                      }}
+                      type="button"
+                    >
+                      {busyAction === "register-basic"
+                        ? "Criando..."
+                        : "Criar cadastro basico"}
+                    </button>
+                  </div>
+                </div>
               </form>
             )}
           </div>
@@ -1255,6 +1551,49 @@ export default function HelpdeskPlayground({
     countryCode: "BR",
     typeContact: "phone",
   });
+  const [challengeForm, setChallengeForm] = useState<ChallengeFormState>({
+    channel: "email",
+    identifier: "customer@example.com",
+  });
+  const [verifyForm, setVerifyForm] = useState<VerifyFormState>({
+    challengeId: "",
+    code: "ABC123",
+  });
+  const [registerBasicForm, setRegisterBasicForm] =
+    useState<RegisterBasicFormState>({
+      email: "novo@example.com",
+      password: "password123",
+      confirmPassword: "password123",
+      name: "Novo Cliente",
+      birthDate: "1990-01-01",
+      contact: "+5569992814769",
+    });
+  const [completeRegistrationForm, setCompleteRegistrationForm] =
+    useState<CompleteRegistrationFormState>({
+      name: "Novo Cliente Atualizado",
+      type: "individual",
+      gender: "male",
+      birthDate: "1990-01-01",
+      cpfCnpj: "11144477735",
+      zipCode: "69000000",
+      address: "Rua Exemplo",
+      district: "Centro",
+      number: "100",
+      cityName: "Manaus",
+      stateCode: "AM",
+      countryCode: "BR",
+      typeContact: "phone",
+      contact: "+5569992814769",
+    });
+  const [clientRegisterForm, setClientRegisterForm] =
+    useState<ClientRegisterFormState>({
+      externalId: "client-001",
+      name: "Cliente Meta",
+      nickname: "cliente",
+      contactType: "whatsapp",
+      contactValue: "5569992814769",
+      externalContactId: "whatsapp-client-001",
+    });
   const [attendantForm, setAttendantForm] = useState<AttendantFormState>({
     externalId: "att-001",
     name: "Atendente Exemplo",
@@ -1310,6 +1649,29 @@ export default function HelpdeskPlayground({
       phoneNumber: "5569992814769",
       contactName: "Cliente Meta",
     });
+  const [bootstrapChatForm, setBootstrapChatForm] =
+    useState<BootstrapChatFormState>({
+      from: "5569992814769",
+      senderName: "Cliente Meta",
+      message: "Ola, preciso de ajuda com meu pedido.",
+    });
+  const [outboundMessageForm, setOutboundMessageForm] =
+    useState<OutboundMessageFormState>({
+      chatId: "",
+      channel: "web",
+      type: "text",
+      message:
+        "Ola! 🚜\nRecebi sua solicitacao e ja estou verificando o pedido 12345.\nSe preferir, posso continuar por aqui com todos os detalhes. 🙂",
+      mediaUrl: "https://cdn.example.com/file.jpg",
+      caption: "Arquivo enviado pelo atendente",
+      fileName: "arquivo.pdf",
+    });
+  const [demoChatForm, setDemoChatForm] = useState<DemoChatFormState>({
+    phoneNumber: "5569992814769",
+    contactName: "Cliente Meta",
+    message:
+      "Ola! Esta e uma demonstracao do chat funcionando direto pelo front.",
+  });
   const [loginErrors, setLoginErrors] = useState<
     Record<string, string | undefined>
   >({});
@@ -1366,6 +1728,52 @@ export default function HelpdeskPlayground({
         chatId: chatId !== null ? String(chatId) : current.chatId,
         participantIds:
           participantId !== null ? String(participantId) : current.participantIds,
+      }));
+    }
+
+    if (chatId !== null) {
+      setOutboundMessageForm((current) => ({
+        ...current,
+        chatId: String(chatId),
+      }));
+    }
+  }
+
+  function syncClientIdentifiers(payload: unknown) {
+    const clientPayload =
+      isRecord(payload) && isRecord(payload.client) ? payload.client : payload;
+    const contactPayload =
+      isRecord(payload) && isRecord(payload.contact) ? payload.contact : payload;
+    const clientId = findValueByKeys(clientPayload, ["client_id", "user_id", "id"]);
+    const contactId = findValueByKeys(contactPayload, ["contact_id", "id"]);
+
+    if (clientId !== null) {
+      setClientForm((current) => ({
+        ...current,
+        id: String(clientId),
+      }));
+
+      setContactForm((current) => ({
+        ...current,
+        userId: String(clientId),
+      }));
+    }
+
+    if (contactId !== null) {
+      setContactForm((current) => ({
+        ...current,
+        contactId: String(contactId),
+      }));
+    }
+  }
+
+  function syncChallengeIdentifier(payload: unknown) {
+    const challengeId = findValueByKeys(payload, ["challenge_id", "challengeId"]);
+
+    if (challengeId !== null) {
+      setVerifyForm((current) => ({
+        ...current,
+        challengeId: String(challengeId),
       }));
     }
   }
@@ -1476,6 +1884,125 @@ export default function HelpdeskPlayground({
       setAuthFeedback({
         tone: "error",
         message: getMessageFromPayload(result.payload, "Falha ao cadastrar."),
+      });
+    }
+
+    setBusyAction(null);
+  }
+
+  async function handleChallenge() {
+    setBusyAction("challenge");
+    setAuthFeedback(null);
+
+    const result = await requestJson("/api/auth/challenge", {
+      method: "POST",
+      body: JSON.stringify({
+        channel: challengeForm.channel,
+        identifier: challengeForm.identifier,
+      }),
+    });
+
+    storeResult("authChallenge", result);
+
+    if (result.ok) {
+      syncChallengeIdentifier(result.payload);
+      setAuthFeedback({
+        tone: "info",
+        message: getMessageFromPayload(
+          result.payload,
+          "Challenge iniciado com sucesso.",
+        ),
+      });
+    } else {
+      setAuthFeedback({
+        tone: "error",
+        message: getMessageFromPayload(
+          result.payload,
+          "Falha ao iniciar o challenge.",
+        ),
+      });
+    }
+
+    setBusyAction(null);
+  }
+
+  async function handleVerifyChallenge() {
+    setBusyAction("verify");
+    setAuthFeedback(null);
+
+    const result = await requestJson("/api/auth/verify", {
+      method: "POST",
+      body: JSON.stringify({
+        challenge_id: verifyForm.challengeId,
+        code: verifyForm.code,
+      }),
+    });
+
+    storeResult("authVerify", result);
+
+    if (result.ok) {
+      persistBrowserTokens(result.payload);
+      setAuthFeedback({
+        tone: "success",
+        message: getMessageFromPayload(
+          result.payload,
+          "Challenge validado com sucesso.",
+        ),
+      });
+      await loadSession();
+      navigateTo("/chat");
+    } else {
+      setAuthFeedback({
+        tone: "error",
+        message: getMessageFromPayload(
+          result.payload,
+          "Falha ao validar o challenge.",
+        ),
+      });
+    }
+
+    setBusyAction(null);
+  }
+
+  async function handleRegisterBasic() {
+    setBusyAction("register-basic");
+    setAuthFeedback(null);
+
+    const result = await requestJson("/api/auth/register/basic", {
+      method: "POST",
+      body: JSON.stringify({
+        email: registerBasicForm.email,
+        password: registerBasicForm.password,
+        password_confirmation: registerBasicForm.confirmPassword,
+        name: registerBasicForm.name,
+        birth_date: registerBasicForm.birthDate,
+        contact: registerBasicForm.contact,
+      }),
+    });
+
+    storeResult("authRegisterBasic", result);
+
+    if (result.ok) {
+      persistBrowserTokens(result.payload);
+      setAuthFeedback({
+        tone: "success",
+        message: getMessageFromPayload(
+          result.payload,
+          "Cadastro basico realizado com sucesso.",
+        ),
+      });
+      await loadSession();
+
+      if (readAuthTokens(result.payload).accessToken) {
+        navigateTo("/chat");
+      }
+    } else {
+      setAuthFeedback({
+        tone: "error",
+        message: getMessageFromPayload(
+          result.payload,
+          "Falha ao realizar o cadastro basico.",
+        ),
       });
     }
 
@@ -1609,6 +2136,55 @@ export default function HelpdeskPlayground({
     setBusyAction(null);
   }
 
+  async function handleClientRegister(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusyAction("client-register");
+    const result = await requestJson("/api/clients/register", {
+      method: "POST",
+      body: JSON.stringify({
+        external_id: clientRegisterForm.externalId,
+        name: clientRegisterForm.name,
+        nickname: clientRegisterForm.nickname,
+        contact_type: clientRegisterForm.contactType,
+        contact_value: clientRegisterForm.contactValue,
+        external_contact_id: clientRegisterForm.externalContactId,
+      }),
+    });
+    storeResult("clientRegister", result);
+
+    if (result.ok) {
+      syncClientIdentifiers(result.payload);
+    }
+
+    setNotice(getMessageFromPayload(result.payload, "Operacao concluida."));
+    setBusyAction(null);
+  }
+
+  async function handleBootstrapChat(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusyAction("chat-bootstrap");
+    const result = await requestJson("/api/chats/bootstrap", {
+      method: "POST",
+      body: JSON.stringify({
+        from: bootstrapChatForm.from,
+        senderName: bootstrapChatForm.senderName,
+        message: bootstrapChatForm.message,
+      }),
+    });
+    storeResult("chatBootstrap", result);
+
+    if (result.ok) {
+      syncChatIdentifiers(result.payload);
+      await handleListChats();
+    } else {
+      setNotice(
+        getMessageFromPayload(result.payload, "Falha ao abrir o chat inicial."),
+      );
+    }
+
+    setBusyAction(null);
+  }
+
   async function handleLoadMe() {
     setBusyAction("me");
     const result = await requestJson("/api/auth/me");
@@ -1621,6 +2197,38 @@ export default function HelpdeskPlayground({
       setNotice(getMessageFromPayload(result.payload, "Falha ao consultar /auth/me."));
     }
 
+    setBusyAction(null);
+  }
+
+  async function handleCompleteRegistration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusyAction("register-complete");
+    const result = await requestJson("/api/auth/register/complete", {
+      method: "PUT",
+      body: JSON.stringify({
+        name: completeRegistrationForm.name,
+        type: completeRegistrationForm.type,
+        gender: completeRegistrationForm.gender,
+        birth_date: completeRegistrationForm.birthDate,
+        cpf_cnpj: completeRegistrationForm.cpfCnpj,
+        zip_code: completeRegistrationForm.zipCode,
+        address: completeRegistrationForm.address,
+        district: completeRegistrationForm.district,
+        number: completeRegistrationForm.number,
+        city_name: completeRegistrationForm.cityName,
+        state_code: completeRegistrationForm.stateCode,
+        country_code: completeRegistrationForm.countryCode,
+        type_contact: completeRegistrationForm.typeContact,
+        contact: completeRegistrationForm.contact,
+      }),
+    });
+    storeResult("authRegisterComplete", result);
+
+    if (result.ok) {
+      await loadSession();
+    }
+
+    setNotice(getMessageFromPayload(result.payload, "Operacao concluida."));
     setBusyAction(null);
   }
 
@@ -1867,6 +2475,10 @@ export default function HelpdeskPlayground({
 
     if (result.ok) {
       syncChatIdentifiers(result.payload);
+      setOutboundMessageForm((current) => ({
+        ...current,
+        channel: "whatsapp",
+      }));
       await handleListChats();
     } else {
       setNotice(
@@ -1877,6 +2489,87 @@ export default function HelpdeskPlayground({
       );
     }
 
+    setBusyAction(null);
+  }
+
+  async function handleDemoWhatsAppChat(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusyAction("demo-chat");
+
+    const sessionResult = await requestJson("/api/chats/whatsapp/session", {
+      method: "POST",
+      body: JSON.stringify({
+        phone_number: demoChatForm.phoneNumber,
+        contact_name: demoChatForm.contactName,
+      }),
+    });
+    storeResult("chatWhatsappSession", sessionResult);
+
+    if (!sessionResult.ok) {
+      setNotice(
+        getMessageFromPayload(
+          sessionResult.payload,
+          "Falha ao abrir a sessao de WhatsApp.",
+        ),
+      );
+      setBusyAction(null);
+      return;
+    }
+
+    syncChatIdentifiers(sessionResult.payload);
+
+    const chatId =
+      findValueByKeys(sessionResult.payload, ["chat_id", "chatId", "id"]) ??
+      chatForm.chatId;
+
+    if (chatId === null || !String(chatId).trim()) {
+      setNotice("A sessao abriu, mas a API nao retornou um chatId utilizavel.");
+      setBusyAction(null);
+      return;
+    }
+
+    const outboundResult = await requestJson("/api/messages/send", {
+      method: "POST",
+      body: JSON.stringify({
+        chat_id: String(chatId),
+        channel: "whatsapp",
+        type: "text",
+        message: demoChatForm.message,
+      }),
+    });
+    storeResult("messageSendOutbound", outboundResult);
+
+    if (!outboundResult.ok) {
+      setNotice(
+        getMessageFromPayload(
+          outboundResult.payload,
+          "Falha ao enviar a mensagem de demonstracao.",
+        ),
+      );
+      setBusyAction(null);
+      return;
+    }
+
+    setWhatsAppSessionForm({
+      phoneNumber: demoChatForm.phoneNumber,
+      contactName: demoChatForm.contactName,
+    });
+    setOutboundMessageForm((current) => ({
+      ...current,
+      chatId: String(chatId),
+      channel: "whatsapp",
+      type: "text",
+      message: demoChatForm.message,
+    }));
+    setChatForm((current) => ({
+      ...current,
+      chatId: String(chatId),
+      activeChannel: "whatsapp",
+    }));
+
+    await handleListChats();
+    await handleLoadMessages(String(chatId));
+    setNotice("Chat demonstrativo aberto e mensagem enviada com sucesso.");
     setBusyAction(null);
   }
 
@@ -1901,15 +2594,17 @@ export default function HelpdeskPlayground({
     setBusyAction(null);
   }
 
-  async function handleLoadMessages() {
-    if (!chatForm.chatId.trim()) {
+  async function handleLoadMessages(chatIdOverride?: string) {
+    const targetChatId = (chatIdOverride ?? chatForm.chatId).trim();
+
+    if (!targetChatId) {
       setNotice("Informe um chatId para listar as mensagens.");
       return;
     }
 
     setBusyAction("messages-list");
     const result = await requestJson(
-      `/api/messages?chatId=${encodeURIComponent(chatForm.chatId.trim())}`,
+      `/api/messages?chatId=${encodeURIComponent(targetChatId)}`,
     );
     storeResult("messagesList", result);
 
@@ -1944,6 +2639,46 @@ export default function HelpdeskPlayground({
       }));
     } else {
       setNotice(getMessageFromPayload(result.payload, "Falha ao enviar a mensagem."));
+    }
+
+    setBusyAction(null);
+  }
+
+  async function handleSendOutboundMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusyAction("message-send-outbound");
+    const result = await requestJson("/api/messages/send", {
+      method: "POST",
+      body: JSON.stringify({
+        chat_id: outboundMessageForm.chatId || chatForm.chatId,
+        channel: outboundMessageForm.channel,
+        type: outboundMessageForm.type,
+        message: outboundMessageForm.message,
+        media: {
+          url: outboundMessageForm.mediaUrl,
+          caption: outboundMessageForm.caption,
+          filename: outboundMessageForm.fileName,
+        },
+      }),
+    });
+    storeResult("messageSendOutbound", result);
+
+    if (result.ok) {
+      syncChatIdentifiers(result.payload);
+      await handleLoadMessages();
+      setNotice(
+        getMessageFromPayload(
+          result.payload,
+          "Mensagem outbound enviada com sucesso.",
+        ),
+      );
+    } else {
+      setNotice(
+        getMessageFromPayload(
+          result.payload,
+          "Falha ao enviar a mensagem outbound.",
+        ),
+      );
     }
 
     setBusyAction(null);
@@ -1989,17 +2724,26 @@ export default function HelpdeskPlayground({
     return (
       <AuthScreen
         busyAction={busyAction}
+        challengeForm={challengeForm}
         feedback={authFeedback}
         loginErrors={loginErrors}
         loginForm={loginForm}
         mode={authMode}
+        onChallenge={handleChallenge}
         onLogin={handleLogin}
         onRegister={handleRegister}
+        onRegisterBasic={handleRegisterBasic}
+        onVerify={handleVerifyChallenge}
+        registerBasicForm={registerBasicForm}
         registerErrors={registerErrors}
         registerForm={registerForm}
+        setChallengeForm={setChallengeForm}
         setLoginForm={setLoginForm}
         setMode={setAuthMode}
+        setRegisterBasicForm={setRegisterBasicForm}
         setRegisterForm={setRegisterForm}
+        setVerifyForm={setVerifyForm}
+        verifyForm={verifyForm}
       />
     );
   }
@@ -2010,13 +2754,13 @@ export default function HelpdeskPlayground({
         <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-700">
-              Helpdesk API Workspace
+              Helpdesk Front Office
             </p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight text-stone-950">
-              Console integrado com a colecao Postman
+              Operacao do helpdesk guiada pela API
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-7 text-stone-500">
-              Base URL ativa: <span className="font-semibold text-stone-700">{session.baseUrl}</span>
+              Base URL ativa: <span className="font-semibold text-stone-700">{session.baseUrl}</span>. Os paineis abaixo espelham os fluxos de onboarding, atendimento e integracao expostos pelo backend.
             </p>
           </div>
 
@@ -2382,6 +3126,121 @@ export default function HelpdeskPlayground({
                 </div>
               </div>
             </form>
+
+            <form className={cardClassName} onSubmit={handleSendOutboundMessage}>
+              <div className="grid gap-4">
+                <div>
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.28em] text-orange-700">
+                    Outbound message
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-stone-500">
+                    Fluxo da collection para `POST /messages/send`, incluindo texto
+                    ou midia por `chat_id`.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Field label="Chat ID">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setOutboundMessageForm((current) => ({
+                          ...current,
+                          chatId: event.target.value,
+                        }))
+                      }
+                      value={outboundMessageForm.chatId}
+                    />
+                  </Field>
+                  <Field label="Channel">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setOutboundMessageForm((current) => ({
+                          ...current,
+                          channel: event.target.value,
+                        }))
+                      }
+                      value={outboundMessageForm.channel}
+                    />
+                  </Field>
+                  <Field label="Type">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setOutboundMessageForm((current) => ({
+                          ...current,
+                          type: event.target.value,
+                        }))
+                      }
+                      value={outboundMessageForm.type}
+                    />
+                  </Field>
+                </div>
+
+                <Field label="Message">
+                  <textarea
+                    className={`${inputClassName} min-h-28 resize-y`}
+                    onChange={(event) =>
+                      setOutboundMessageForm((current) => ({
+                        ...current,
+                        message: event.target.value,
+                      }))
+                    }
+                    value={outboundMessageForm.message}
+                  />
+                </Field>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Field label="Media URL">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setOutboundMessageForm((current) => ({
+                          ...current,
+                          mediaUrl: event.target.value,
+                        }))
+                      }
+                      value={outboundMessageForm.mediaUrl}
+                    />
+                  </Field>
+                  <Field label="Caption">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setOutboundMessageForm((current) => ({
+                          ...current,
+                          caption: event.target.value,
+                        }))
+                      }
+                      value={outboundMessageForm.caption}
+                    />
+                  </Field>
+                  <Field label="Filename">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setOutboundMessageForm((current) => ({
+                          ...current,
+                          fileName: event.target.value,
+                        }))
+                      }
+                      value={outboundMessageForm.fileName}
+                    />
+                  </Field>
+                </div>
+
+                <button
+                  className={secondaryButtonClassName}
+                  disabled={busyAction === "message-send-outbound"}
+                  type="submit"
+                >
+                  {busyAction === "message-send-outbound"
+                    ? "Enviando..."
+                    : "Send outbound message"}
+                </button>
+              </div>
+            </form>
           </div>
         </section>
 
@@ -2389,6 +3248,456 @@ export default function HelpdeskPlayground({
           <div className="h-full space-y-4 overflow-y-auto pr-1">
             <Section
               defaultOpen
+              description="Os fluxos principais do front saem daqui: demonstrar envio por numero, cadastrar cliente com contato, disparar o primeiro inbound e levar a conversa para o inbox."
+              title="Front Flows"
+            >
+              <div className="rounded-[24px] border border-orange-200 bg-white/90 p-4 shadow-sm">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-orange-700">
+                  Demo pronta
+                </p>
+                <h3 className="mt-3 text-lg font-semibold tracking-tight text-stone-950">
+                  Digite um numero e envie uma mensagem
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-stone-500">
+                  Este fluxo abre ou reaproveita `POST /api/chats/whatsapp/session`
+                  e depois envia `POST /api/messages/send` no mesmo submit.
+                </p>
+              </div>
+
+              <form className="mt-5 grid gap-4" onSubmit={handleDemoWhatsAppChat}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Numero WhatsApp">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setDemoChatForm((current) => ({
+                          ...current,
+                          phoneNumber: event.target.value,
+                        }))
+                      }
+                      value={demoChatForm.phoneNumber}
+                    />
+                  </Field>
+                  <Field label="Nome do contato">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setDemoChatForm((current) => ({
+                          ...current,
+                          contactName: event.target.value,
+                        }))
+                      }
+                      value={demoChatForm.contactName}
+                    />
+                  </Field>
+                </div>
+                <Field label="Mensagem inicial">
+                  <textarea
+                    className={`${inputClassName} min-h-24 resize-y`}
+                    onChange={(event) =>
+                      setDemoChatForm((current) => ({
+                        ...current,
+                        message: event.target.value,
+                      }))
+                    }
+                    value={demoChatForm.message}
+                  />
+                </Field>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    className={primaryButtonClassName}
+                    disabled={busyAction === "demo-chat"}
+                    type="submit"
+                  >
+                    {busyAction === "demo-chat"
+                      ? "Abrindo chat..."
+                      : "Abrir chat e enviar"}
+                  </button>
+                  <button
+                    className={secondaryButtonClassName}
+                    onClick={() => {
+                      setWhatsAppSessionForm({
+                        phoneNumber: demoChatForm.phoneNumber,
+                        contactName: demoChatForm.contactName,
+                      });
+                      setOutboundMessageForm((current) => ({
+                        ...current,
+                        channel: "whatsapp",
+                        type: "text",
+                        message: demoChatForm.message,
+                      }));
+                    }}
+                    type="button"
+                  >
+                    Copiar para formularios
+                  </button>
+                </div>
+              </form>
+
+              <div className="rounded-[24px] border border-orange-100 bg-orange-50/70 p-4">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-orange-700">
+                  Jornada 1
+                </p>
+                <h3 className="mt-3 text-lg font-semibold tracking-tight text-stone-950">
+                  Cadastrar cliente e contato no mesmo passo
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-stone-500">
+                  Usa `POST /api/clients/register` para deixar o cliente pronto
+                  para atendimento sem montar as etapas manualmente.
+                </p>
+              </div>
+
+              <form className="mt-5 grid gap-4" onSubmit={handleClientRegister}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="External ID">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setClientRegisterForm((current) => ({
+                          ...current,
+                          externalId: event.target.value,
+                        }))
+                      }
+                      value={clientRegisterForm.externalId}
+                    />
+                  </Field>
+                  <Field label="Name">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setClientRegisterForm((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                      value={clientRegisterForm.name}
+                    />
+                  </Field>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Nickname">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setClientRegisterForm((current) => ({
+                          ...current,
+                          nickname: event.target.value,
+                        }))
+                      }
+                      value={clientRegisterForm.nickname}
+                    />
+                  </Field>
+                  <Field label="Contact type">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setClientRegisterForm((current) => ({
+                          ...current,
+                          contactType: event.target.value,
+                        }))
+                      }
+                      value={clientRegisterForm.contactType}
+                    />
+                  </Field>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Contact value">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setClientRegisterForm((current) => ({
+                          ...current,
+                          contactValue: event.target.value,
+                        }))
+                      }
+                      value={clientRegisterForm.contactValue}
+                    />
+                  </Field>
+                  <Field label="External contact ID">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setClientRegisterForm((current) => ({
+                          ...current,
+                          externalContactId: event.target.value,
+                        }))
+                      }
+                      value={clientRegisterForm.externalContactId}
+                    />
+                  </Field>
+                </div>
+                <button
+                  className={primaryButtonClassName}
+                  disabled={busyAction === "client-register"}
+                  type="submit"
+                >
+                  {busyAction === "client-register"
+                    ? "Registrando..."
+                    : "Register client flow"}
+                </button>
+              </form>
+
+              <div className="mt-6 rounded-[24px] border border-orange-100 bg-orange-50/70 p-4">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-orange-700">
+                  Jornada 2
+                </p>
+                <h3 className="mt-3 text-lg font-semibold tracking-tight text-stone-950">
+                  Simular o primeiro contato recebido
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-stone-500">
+                  Usa `POST /api/chats/bootstrap` para abrir a conversa como se
+                  ela tivesse entrado por webhook.
+                </p>
+              </div>
+
+              <form className="mt-5 grid gap-4" onSubmit={handleBootstrapChat}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="From">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setBootstrapChatForm((current) => ({
+                          ...current,
+                          from: event.target.value,
+                        }))
+                      }
+                      value={bootstrapChatForm.from}
+                    />
+                  </Field>
+                  <Field label="Sender name">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setBootstrapChatForm((current) => ({
+                          ...current,
+                          senderName: event.target.value,
+                        }))
+                      }
+                      value={bootstrapChatForm.senderName}
+                    />
+                  </Field>
+                </div>
+                <Field label="Initial message">
+                  <textarea
+                    className={`${inputClassName} min-h-24 resize-y`}
+                    onChange={(event) =>
+                      setBootstrapChatForm((current) => ({
+                        ...current,
+                        message: event.target.value,
+                      }))
+                    }
+                    value={bootstrapChatForm.message}
+                  />
+                </Field>
+                <button
+                  className={secondaryButtonClassName}
+                  disabled={busyAction === "chat-bootstrap"}
+                  type="submit"
+                >
+                  {busyAction === "chat-bootstrap"
+                    ? "Disparando..."
+                    : "Bootstrap inbound chat"}
+                </button>
+              </form>
+            </Section>
+
+            <Section
+              description="Crie, atualize e remova atendentes usando os endpoints documentados em Attendants."
+              title="Registration Complete"
+            >
+              <form className="grid gap-4" onSubmit={handleCompleteRegistration}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Name">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.name}
+                    />
+                  </Field>
+                  <Field label="CPF/CNPJ">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          cpfCnpj: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.cpfCnpj}
+                    />
+                  </Field>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Field label="Type">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          type: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.type}
+                    />
+                  </Field>
+                  <Field label="Gender">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          gender: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.gender}
+                    />
+                  </Field>
+                  <Field label="Birth date">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          birthDate: event.target.value,
+                        }))
+                      }
+                      type="date"
+                      value={completeRegistrationForm.birthDate}
+                    />
+                  </Field>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Zip code">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          zipCode: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.zipCode}
+                    />
+                  </Field>
+                  <Field label="Address">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          address: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.address}
+                    />
+                  </Field>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Field label="District">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          district: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.district}
+                    />
+                  </Field>
+                  <Field label="Number">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          number: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.number}
+                    />
+                  </Field>
+                  <Field label="City">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          cityName: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.cityName}
+                    />
+                  </Field>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Field label="State code">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          stateCode: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.stateCode}
+                    />
+                  </Field>
+                  <Field label="Country code">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          countryCode: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.countryCode}
+                    />
+                  </Field>
+                  <Field label="Type contact">
+                    <input
+                      className={inputClassName}
+                      onChange={(event) =>
+                        setCompleteRegistrationForm((current) => ({
+                          ...current,
+                          typeContact: event.target.value,
+                        }))
+                      }
+                      value={completeRegistrationForm.typeContact}
+                    />
+                  </Field>
+                </div>
+                <Field label="Contact">
+                  <input
+                    className={inputClassName}
+                    onChange={(event) =>
+                      setCompleteRegistrationForm((current) => ({
+                        ...current,
+                        contact: event.target.value,
+                      }))
+                    }
+                    value={completeRegistrationForm.contact}
+                  />
+                </Field>
+                <button
+                  className={secondaryButtonClassName}
+                  disabled={busyAction === "register-complete"}
+                  type="submit"
+                >
+                  {busyAction === "register-complete"
+                    ? "Completando..."
+                    : "Complete registration"}
+                </button>
+              </form>
+            </Section>
+
+            <Section
               description="Crie, atualize e remova atendentes usando os endpoints documentados em Attendants."
               title="Attendants"
             >
@@ -2478,7 +3787,7 @@ export default function HelpdeskPlayground({
             </Section>
 
             <Section
-              description="Crie, atualize e exclua clientes pelo id interno retornado pela API."
+              description="Onboarding manual do cliente quando voce precisa ajustar dados apos o fluxo combinado."
               title="Clients"
             >
               <form className="grid gap-4" onSubmit={handleClientCreate}>
@@ -2608,7 +3917,7 @@ export default function HelpdeskPlayground({
             </Section>
 
             <Section
-              description="Use o user_id do cliente e o contactId retornado pela API para gerenciar contatos."
+              description="Gerencie os canais do cliente para manter telefone, WhatsApp e ids externos sincronizados."
               title="Client Contacts"
             >
               <form className="grid gap-4" onSubmit={handleContactCreate}>
@@ -2750,7 +4059,7 @@ export default function HelpdeskPlayground({
             </Section>
 
             <Section
-              description="Valide o callback do WhatsApp e simule payloads Meta diretamente pelo frontend."
+              description="Valide o callback do WhatsApp e simule payloads Meta diretamente pelo front operacional."
               title="Webhooks"
             >
               <form className="grid gap-4" onSubmit={handleVerifyWebhook}>
